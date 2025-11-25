@@ -1,0 +1,26 @@
+renv::install("caret")
+renv::install("mice")
+renv::install("dbscan")
+renv::install("ggplot2")
+renv::install("viridis")
+renv::install("spatstat")
+renv::install("dplyr")
+renv::install("ggforce") #QUEDÉ
+renv::install("ggimage")
+renv::install("magick")
+renv::install("grid")
+
+
+library(caret)
+library(mice)
+library(dbscan)
+library(ggplot2)
+library(viridis)
+library(spatstat)
+library(dplyr)
+library(ggforce)
+library(ggimage)
+library(magick)
+library(grid)
+
+renv::snapshot()
