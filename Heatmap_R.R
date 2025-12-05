@@ -32,7 +32,7 @@ df_one <- read_excel("data/DB_heatmap_one_session.xlsx")
 df_all <- read_excel("data/DB_all_motor_points.xlsx")
 
 # Cross Tables ----
-df_one_calf <- df_one[,c("Patient","VM","KF_A")]
+df_one_calf <- df_one[,c("Patient","VM","KF_A","KF_B_excel","LM_A")]
 df_all_calf <- df_all[,c("Patient","VM","KF_A","KF_B_excel","LM_A")]
 
 df_one_calf <- unique(df_one_calf)
@@ -43,7 +43,7 @@ df_one_calf <- df_one_calf[!is.na(df_one_calf$KF_A),] # exclusión
 # ====== #
 df_final_one <- merge(df_one_calf, df_all_calf, by = c("Patient","VM","KF_A")) # medidas de one_calf
 
-df_repetidos <- df_final_one %>% group_by(Patient) %>% filter(n()>1) %>% ungroup() # más de una vez
+df_repeated <- df_final_one %>% group_by(Patient) %>% filter(n()>1) %>% ungroup() # más de una vez
 
 # Solo una vez x patient # TABLA FINAL
 df_unicos <- df_final_one %>% distinct(Patient, .keep_all = TRUE)
@@ -74,7 +74,8 @@ data$measure_abscissa <- ifelse(((data$Leg=='L') & (data$`L_M`=='L'))|
 
 nrow(data)
 
-data[(data$Cm_KF>data$ordinate) | (data$Cm_VM>data$abscissa),] # Son 6 registros
+w <- data[(data$Cm_KF>data$ordinate) | (data$Cm_VM>data$abscissa),] # Son 6 registros
+w_ilogic <- w[,c("Patient","Circ_A","LM_A","KF_B_excel","Cm_VM","Cm_KF")]
 data <- data[(data$Cm_KF<=data$ordinate) & (data$Cm_VM<=data$abscissa),]
 
 data$proportion_abscissa <- data$measure_abscissa/data$abscissa
@@ -89,7 +90,9 @@ length(unique(data$Patient))
 data$normalized_abscissa <- data$proportion_abscissa*mean_x
 data$normalized_ordinate <- data$proportion_ordinate*mean_y
 
-
+# Bins Measure ----
+zone1 <- sqrt(8.1)
+zone12 <- sqrt(42.9)
 
 # ======== HEATMAP CUADROS (BINS) + CONTORNO DE DENSIDAD ----
 
@@ -132,6 +135,110 @@ ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordina
              linetype= "solid", color="red", size=0.2) +
   coord_fixed(ratio = 1)  
 
+library(ggplot2)
+library(viridis)
+
+subset_representative <- data
+
+square_size <- zone12   # cámbialo a 1, 1.5, 2, etc. según qué tan fina quieras la grilla
+
+ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordinate)) +
+  stat_bin2d(
+    binwidth = c(square_size, square_size),   # cuadrados de lado = square_size
+    aes(fill = ..count..),
+    color = "white"
+  ) +
+  scale_fill_gradientn(colors = c("yellow", "orange", "red")) +  # Cambiar la paleta de colores
+  geom_density2d(color = "black") +  # Añadir líneas de contorno
+  theme_minimal(base_size = 10) +    # Usar un tema minimalista con un tamaño de fuente base más grande
+  labs(
+    title = "Heatmap de Puntos con Contornos de Densidad",
+    x = "Abscissa Normalizada",
+    y = "Ordenada Normalizada",
+    fill = "Cuenta"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"), # Centrar y poner en negrita el título
+    axis.title = element_text(face = "bold"),              # Poner en negrita los títulos de los ejes
+    panel.grid = element_blank(),                          # Quitar las líneas de la cuadrícula
+    panel.background = element_rect(fill = "white"),       # Fondo blanco
+    legend.position = "right",                             # Posición de la leyenda
+    legend.title = element_text(face = "bold"),            # Poner en negrita el título de la leyenda
+    legend.background = element_rect(fill = "lightgrey", color = NA)  # Fondo de la leyenda
+  ) +
+  scale_x_continuous(breaks = seq(-9, 9, by = 3),limits = c(-9, 9)) +
+  scale_y_continuous(breaks = seq(-27, 3, by = 3),limits = c(-25, 0.5)) +
+  geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 0.2) +
+  geom_hline(yintercept = (-1) * mean_y,linetype = "solid", color = "red", size = 0.2) +
+  geom_vline(xintercept = (-1) * mean_x,linetype = "solid", color = "red", size = 0.2) +
+  geom_vline(xintercept = mean_x,linetype = "solid", color = "red", size = 0.2) +
+  coord_fixed(ratio = 1)
+
+# Otro más
+square_size <- zone12
+
+ggplot(subset_representative,
+       aes(x = normalized_abscissa, y = normalized_ordinate)) +
+  
+  # Heatmap con cuadrados de lado = square_size
+  stat_bin2d(
+    binwidth = c(square_size, square_size),
+    aes(fill = ..count..),
+    color = "white"
+  ) +
+  
+  # Colores del heatmap
+  scale_fill_gradientn(colors = c("yellow", "orange", "red")) +
+  
+  # Contornos de densidad
+  geom_density2d(color = "black") +
+  
+  # Tema base
+  theme_minimal(base_size = 10) +
+  
+  # Títulos
+  labs(
+    title = "Heatmap of Points with Density Contours",
+    x = "Normalized Abscissa",
+    y = "Normalized Ordinate",
+    fill = "Count"
+  ) +
+  
+  # Estética general
+  theme(
+    plot.title       = element_text(hjust = 0.5, face = "bold"),
+    axis.title       = element_text(face = "bold"),
+    panel.grid       = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    legend.position  = "right",
+    legend.title     = element_text(face = "bold"),
+    legend.background = element_rect(fill = "lightgrey", color = NA)
+  ) +
+  
+  # Ejes (solo breaks; sin limits, para que el corte lo haga coord_fixed)
+  scale_x_continuous(
+    breaks = seq(-9, 9, by = 3),
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    breaks = seq(-27, 3, by = 3),
+    expand = c(0, 0)
+  ) +
+  
+  # Líneas de referencia
+  geom_vline(xintercept = 0,          linetype = "dashed", size = 0.2) +
+  geom_hline(yintercept = 0,          linetype = "dashed", size = 0.2) +
+  geom_hline(yintercept = -mean_y,    linetype = "solid",  color = "red", size = 0.2) +
+  geom_vline(xintercept = -mean_x,    linetype = "solid",  color = "red", size = 0.2) +
+  geom_vline(xintercept =  mean_x,    linetype = "solid",  color = "red", size = 0.2) +
+  
+  # Relación 1:1 y corte REAL de lo que esté fuera de los límites
+  coord_fixed(
+    ratio = 1,
+    xlim  = c(-8, 8),
+    ylim  = c(-25, 0.5)
+  )
 
 
 #  HEATMAP CUADROS (BINS) ----
