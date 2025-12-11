@@ -76,7 +76,7 @@ data$normalized_ordinate <- data$proportion_ordinate*mean_y
 # Bins Measure ----
 zone1 <- sqrt(8.1)
 zone12 <- sqrt(42.9)
-
+hi<-5
 square_size <- zone12
 
 # ======== HEATMAP CUADROS (BINS) + CONTORNO DE DENSIDAD ----
