@@ -28,36 +28,20 @@ library(grid)
 library(readxl)
 
 
-df_one <- read_excel("data/DB_heatmap_one_session.xlsx")
-df_all <- read_excel("data/DB_all_motor_points.xlsx")
 
-# Cross Tables ----
-df_one_calf <- df_one[,c("Patient","VM","KF_A","KF_B_excel","LM_A")]
-df_all_calf <- df_all[,c("Patient","VM","KF_A","KF_B_excel","LM_A")]
+data_heatmap <- read_excel("data/DB_heatmap_one_session_251204.xlsx")
+data <- data_heatmap[,c("Patient","Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF","Circ_A","Circ_B","Circ_KF","Circ_MP")]
 
-df_one_calf <- unique(df_one_calf)
-df_all_calf <- unique(df_all_calf)
+# Validación ----
 
-df_one_calf <- df_one_calf[!is.na(df_one_calf$KF_A),] # exclusión
+data <- data[!is.na(data$Patient),]
 
-# ====== #
-df_final_one <- merge(df_one_calf, df_all_calf, by = c("Patient","VM","KF_A")) # medidas de one_calf
+data <- data[(!is.na(data$KF_B_excel)) & (data$KF_B_excel>5),] # Quitando medidas que no tienen sentido
+nrow(data)
 
-df_repeated <- df_final_one %>% group_by(Patient) %>% filter(n()>1) %>% ungroup() # más de una vez
-
-# Solo una vez x patient # TABLA FINAL
-df_unicos <- df_final_one %>% distinct(Patient, .keep_all = TRUE)
-
-# Normality Test - Dimensionality
-str(df_unicos)
-shapiro.test(df_unicos$LM_A)
-
-str(df_one)
-
-data <- df_one[,c("Patient","Leg","L_M","MP","VM","KF_A","Cm_VM","Cm_KF","Circ_A","Circ_B","Circ_KF","Circ_MP")]
-
-data <- merge(data, df_unicos, by = c("Patient","VM","KF_A"))
-length(unique(data$Patient))
+#df_unicos[is.na(df_unicos$Circ_A),] # Validar
+df_unicos <- data[data$MP==1,]
+df_repeated <- df_unicos %>% group_by(Patient) %>% filter(n()>1) %>% ungroup() #validar pacientes con diferentes medidas anatómicas
 
 
 # Normalized Calf ----
@@ -74,16 +58,15 @@ data$measure_abscissa <- ifelse(((data$Leg=='L') & (data$`L_M`=='L'))|
 
 nrow(data)
 
-w <- data[(data$Cm_KF>data$ordinate) | (data$Cm_VM>data$abscissa),] # Son 6 registros
-w_ilogic <- w[,c("Patient","Circ_A","LM_A","KF_B_excel","Cm_VM","Cm_KF")]
 data <- data[(data$Cm_KF<=data$ordinate) & (data$Cm_VM<=data$abscissa),]
 
 data$proportion_abscissa <- data$measure_abscissa/data$abscissa
 data$proportion_ordinate <- data$measure_ordinate/data$ordinate
 
-mean_a <- mean(data$KF_A[data$MP=="1"])
+mean_a <- mean(data$KF_A[data$MP=="1"], na.rm=TRUE )
 mean_y <- mean(data$KF_B_excel[data$MP=="1"])
 mean_x <- mean(data$abscissa[data$MP=="1"])
+
 
 length(unique(data$Patient))
 
@@ -94,6 +77,8 @@ data$normalized_ordinate <- data$proportion_ordinate*mean_y
 zone1 <- sqrt(8.1)
 zone12 <- sqrt(42.9)
 
+square_size <- zone12
+
 # ======== HEATMAP CUADROS (BINS) + CONTORNO DE DENSIDAD ----
 
 library(ggplot2)
@@ -101,82 +86,6 @@ library(viridis)
 
 subset_representative <- data
 #subset_representative <- subset(data,data$Representative==1)
-
-# Crear el heatmap
-ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordinate)) +
-  stat_bin2d(bins = 10, aes(fill = ..count..), color = "white") + # Añadir bordes blancos a los bins
-  scale_fill_gradientn(colors = c("yellow", "orange", "red")) +  # Cambiar la paleta de colores
-  geom_density2d(color = "black") + # Añadir líneas de contorno
-  theme_minimal(base_size = 10) +  # Usar un tema minimalista con un tamaño de fuente base más grande
-  labs(title = "Heatmap de Puntos con Contornos de Densidad",
-       x = "Abscissa Normalizada",
-       y = "Ordenada Normalizada",
-       fill = "Cuenta") + 
-  theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"), # Centrar y poner en negrita el título
-    axis.title = element_text(face = "bold"),  # Poner en negrita los títulos de los ejes
-    panel.grid = element_blank(),  # Quitar las líneas de la cuadrícula
-    panel.background = element_rect(fill = "white"),  # Fondo blanco
-    legend.position = "right",  # Posición de la leyenda
-    legend.title = element_text(face = "bold"),  # Poner en negrita el título de la leyenda
-    legend.background = element_rect(fill = "lightgrey", color = NA)  # Fondo de la leyenda
-  ) +
-  scale_x_continuous(breaks = seq(-9, 9, by = 3), 
-                     limits = c(-9,9)) +
-  scale_y_continuous(breaks = seq(-27, 3, by = 3), 
-                     limits = c(-27,3))+
-  geom_vline(xintercept = 0, linetype = "dashed", size=0.2) + 
-  geom_hline(yintercept = 0, linetype = "dashed", size=0.2) +
-  geom_hline(yintercept = (-1)*mean_y, 
-             linetype= "solid", color="red", size=0.2) +
-  geom_vline(xintercept = (-1)*mean_x, 
-             linetype= "solid", color="red", size=0.2) +
-  geom_vline(xintercept = mean_x, 
-             linetype= "solid", color="red", size=0.2) +
-  coord_fixed(ratio = 1)  
-
-library(ggplot2)
-library(viridis)
-
-subset_representative <- data
-
-square_size <- zone12   # cámbialo a 1, 1.5, 2, etc. según qué tan fina quieras la grilla
-
-ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordinate)) +
-  stat_bin2d(
-    binwidth = c(square_size, square_size),   # cuadrados de lado = square_size
-    aes(fill = ..count..),
-    color = "white"
-  ) +
-  scale_fill_gradientn(colors = c("yellow", "orange", "red")) +  # Cambiar la paleta de colores
-  geom_density2d(color = "black") +  # Añadir líneas de contorno
-  theme_minimal(base_size = 10) +    # Usar un tema minimalista con un tamaño de fuente base más grande
-  labs(
-    title = "Heatmap de Puntos con Contornos de Densidad",
-    x = "Abscissa Normalizada",
-    y = "Ordenada Normalizada",
-    fill = "Cuenta"
-  ) +
-  theme(
-    plot.title = element_text(hjust = 0.5, face = "bold"), # Centrar y poner en negrita el título
-    axis.title = element_text(face = "bold"),              # Poner en negrita los títulos de los ejes
-    panel.grid = element_blank(),                          # Quitar las líneas de la cuadrícula
-    panel.background = element_rect(fill = "white"),       # Fondo blanco
-    legend.position = "right",                             # Posición de la leyenda
-    legend.title = element_text(face = "bold"),            # Poner en negrita el título de la leyenda
-    legend.background = element_rect(fill = "lightgrey", color = NA)  # Fondo de la leyenda
-  ) +
-  scale_x_continuous(breaks = seq(-9, 9, by = 3),limits = c(-9, 9)) +
-  scale_y_continuous(breaks = seq(-27, 3, by = 3),limits = c(-25, 0.5)) +
-  geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) +
-  geom_hline(yintercept = 0, linetype = "dashed", size = 0.2) +
-  geom_hline(yintercept = (-1) * mean_y,linetype = "solid", color = "red", size = 0.2) +
-  geom_vline(xintercept = (-1) * mean_x,linetype = "solid", color = "red", size = 0.2) +
-  geom_vline(xintercept = mean_x,linetype = "solid", color = "red", size = 0.2) +
-  coord_fixed(ratio = 1)
-
-# Otro más
-square_size <- zone12
 
 ggplot(subset_representative,
        aes(x = normalized_abscissa, y = normalized_ordinate)) +
