@@ -32,11 +32,10 @@ library(readxl)
 data_heatmap <- read_excel("data/DB_heatmap_one_session_251204.xlsx")
 data <- data_heatmap[,c("Patient","Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF","Circ_A","Circ_B","Circ_KF","Circ_MP")]
 
-# Validación ----
+# Validación y filtro riguroso ----
 
-data <- data[!is.na(data$Patient),]
+data <- data[!is.na(data$Patient) & !is.na(data$Cm_KF) & !is.na(data$Cm_VM) & !(data$KF_B_excel==0),]
 
-data <- data[(!is.na(data$KF_B_excel)) & (data$KF_B_excel>5),] # Quitando medidas que no tienen sentido
 nrow(data)
 
 #df_unicos[is.na(df_unicos$Circ_A),] # Validar
@@ -59,6 +58,7 @@ data$measure_abscissa <- ifelse(((data$Leg=='L') & (data$`L_M`=='L'))|
 nrow(data)
 
 data <- data[(data$Cm_KF<=data$ordinate) & (data$Cm_VM<=data$abscissa),]
+data[is.na(data$Cm_KF),]
 
 data$proportion_abscissa <- data$measure_abscissa/data$abscissa
 data$proportion_ordinate <- data$measure_ordinate/data$ordinate
@@ -76,8 +76,9 @@ data$normalized_ordinate <- data$proportion_ordinate*mean_y
 # Bins Measure ----
 zone1 <- sqrt(8.1)
 zone12 <- sqrt(42.9)
+zonex <- 3
 hi<-5
-square_size <- zone12
+square_size <- zonex
 
 # ======== HEATMAP CUADROS (BINS) + CONTORNO DE DENSIDAD ----
 
