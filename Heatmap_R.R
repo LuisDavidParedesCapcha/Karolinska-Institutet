@@ -30,8 +30,9 @@ library(readxl)
 
 
 data_heatmap <- read_excel("data/DB_heatmap_one_session_251204.xlsx")
-data <- data_heatmap[,c("Patient","Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF","Circ_A","Circ_B","Circ_KF","Circ_MP")]
-
+data <- data_heatmap[,c("Patient","Gender",
+                        "Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF","Circ_A","Circ_B","Circ_KF","Circ_MP")]
+str(data_heatmap)
 # Validación y filtro riguroso ----
 
 data <- data[!is.na(data$Patient) & !is.na(data$Cm_KF) & !is.na(data$Cm_VM) & !(data$KF_B_excel==0),]
@@ -63,22 +64,55 @@ data[is.na(data$Cm_KF),]
 data$proportion_abscissa <- data$measure_abscissa/data$abscissa
 data$proportion_ordinate <- data$measure_ordinate/data$ordinate
 
-mean_a <- mean(data$KF_A[data$MP=="1"], na.rm=TRUE )
+mean_a <- mean(data$KF_A[data$MP=="1"], na.rm=TRUE)
 mean_y <- mean(data$KF_B_excel[data$MP=="1"])
-mean_x <- mean(data$abscissa[data$MP=="1"])
+mean_x <- median(data$abscissa[data$MP=="1"])
 
-
+shapiro.test(data$KF_B_excel[data$MP=="1"])
+shapiro.test(data$abscissa[data$MP=="1"])
 length(unique(data$Patient))
 
 data$normalized_abscissa <- data$proportion_abscissa*mean_x
 data$normalized_ordinate <- data$proportion_ordinate*mean_y
 
+# Subject Characteristics
+patient <- length(unique(data$Patient))
+
+gernder_f <- length(data$Gender[data$MP==1 & data$Gender=="F"])
+gernder_m <- length(data$Gender[data$MP==1 & data$Gender=="M"])
+
+leg_left <- length(data$Leg[data$MP==1 & data$Leg=="L"])
+leg_right <- length(data$Leg[data$MP==1 & data$Leg=="R"])
+L_M_lat <- length(data$L_M[data$MP==1 & data$L_M=="L"])
+L_M_med <- length(data$L_M[data$MP==1 & data$L_M=="M"])
+
+shapiro.test(data$VM[data$MP==1])
+meas_VM <-  mean(data$VM[data$MP==1])
+meas_KF_B <- mean(data$KF_B_excel[data$MP==1])
+meas_KF_A <- mean(data$KF_A[data$MP==1], na.rm = TRUE)
+
+meas_Circ_A <- median(data$Circ_A[data$MP==1])
+meas_Circ_B <- median(data$Circ_B[data$MP==1])
+meas_Circ_KF <-  mean(data$Circ_KF[data$MP==1])
+
+length(data$MP[data$MP==5])
+#Error
+e <- qt(0.975, df = length(data$KF_A[data$MP == 1]) - 1) *
+  (sd(data$KF_A[data$MP == 1], na.rm = TRUE) / sqrt(length(data$KF_A[data$MP == 1])))
+
+meas_KF_A-e
+
+quantile(data$Circ_B[data$MP==1],0.75)
+
+
 # Bins Measure ----
 zone1 <- sqrt(8.1)
 zone12 <- sqrt(42.9)
 zonex <- 3
+
+square_size <- zone12
+
 hi<-5
-square_size <- zonex
 
 # ======== HEATMAP CUADROS (BINS) + CONTORNO DE DENSIDAD ----
 
@@ -99,7 +133,11 @@ ggplot(subset_representative,
   ) +
   
   # Colores del heatmap
-  scale_fill_gradientn(colors = c("yellow", "orange", "red")) +
+  scale_fill_gradientn(
+    colors = c("lightyellow","yellow","#FFD700", "#FFA500", "#FF4500", "red"),
+    #values = scales::rescale(c(0,4,8,12,18,24))
+    values = scales::rescale(c(0,70,90,100,110,120))
+  ) +
   
   # Contornos de densidad
   geom_density2d(color = "black") +
@@ -109,9 +147,9 @@ ggplot(subset_representative,
   
   # Títulos
   labs(
-    title = "Heatmap of Points with Density Contours",
-    x = "Normalized Abscissa",
-    y = "Normalized Ordinate",
+    title = "Heatmap + Density Contours - 6.55cm x 6.55cm",
+    x = "PMC",
+    y = "MCC",
     fill = "Count"
   ) +
   
@@ -123,7 +161,7 @@ ggplot(subset_representative,
     panel.background = element_rect(fill = "white"),
     legend.position  = "right",
     legend.title     = element_text(face = "bold"),
-    legend.background = element_rect(fill = "lightgrey", color = NA)
+    legend.background = element_rect(fill = "white", color = NA)
   ) +
   
   # Ejes (solo breaks; sin limits, para que el corte lo haga coord_fixed)
@@ -147,87 +185,116 @@ ggplot(subset_representative,
   coord_fixed(
     ratio = 1,
     xlim  = c(-8, 8),
-    ylim  = c(-25, 0.5)
-  )
+    ylim  = c(-25, 0)) +
 
+  annotate("rect",
+           xmin = -8, xmax =  8,
+           ymin = -25, ymax =  0,
+           fill = NA, color = "black", linewidth = 0.1)
 
-#  HEATMAP CUADROS (BINS) ----
+# ------ COUNT + HEATMAP ----
+
+library(ggplot2)
+library(viridis)
 
 data$MP <- as.factor(data$MP)
 subset_representative <- data
-x <- subset_representative$normalized_abscissa
-y <- subset_representative$normalized_ordinate
 
-mean_x
-mean_y
+# Mantengo tus inputs tal cual
+razon_y <- square_size
+razon_x <- square_size
+limit_x <- 8
+limit_y <- 25
 
-razon_y = 3.5
-razon_x = 3.5
-limit_x = 10.5 #multiplo de la razon de x
-limit_y = 28
 ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordinate)) +
   
-  stat_bin2d(breaks = list(x = seq(-limit_x,limit_x , by = razon_x), y = seq(-limit_y, 0, by = razon_y)), # tamaño de cuadrado #4.5
-             aes(fill = ..count..), color = "brown") +  # relleno con conteo interno y se dividen con líneas blancas
-  scale_fill_gradientn(colors = c("lightyellow","yellow","#FFD700", "#FFA500", "#FF4500", "red"),
-                       #values = scales::rescale(c(0,3,5,8,10,15))) + #1.5x1.5
-                       values = scales::rescale(c(0,4,8,12,18,24))) + #3x3
-  #values = scales::rescale(c(0,3,5,8,12,19))) +  #se ajusta para más colores 2x2
-  
-  geom_point(data = subset_representative, 
-             aes(x = normalized_abscissa, y = normalized_ordinate),
-             size = 1.2, color = "brown") +
-  
-  geom_text(stat = "bin2d", aes(label = ..count..), breaks = list(x = seq(-limit_x, limit_x, by = razon_x), # medidas de los cuadros enumerados
-                                                                  y = seq(-limit_y, 0, by = razon_y)), 
-            vjust = 0.5, color = "black", size = 4, fontface ="bold") + #tamaño de letra dentro de los cuadrados
-  theme_minimal(base_size = 10) +  
-  labs(title = "Both Calves - 3.5cm x 3.5cm",
-       x = "\nVM (cm)",
-       y = "VSO (cm)\n",
-       fill = "Frequency") + 
-  theme(
-    plot.title = element_text(hjust = 0.5, size = 13), 
-    axis.title.x = element_text(size = 12),
-    axis.title.y = element_text(size = 12, angle = 90, vjust = 1.5, hjust = 0.448),
-    
-    axis.text.x = element_text(size = 11),  # Adjust size for x-axis labels
-    axis.text.y = element_text(size = 11),  # Adjust size for y-axis labels
-    legend.text = element_text(size = 10),  # tamaño de número en la leyenda
-    
-    panel.grid = element_line(size=0.1, color= "grey95"), # Esto es el fondo de cuadrículas
-    panel.border = element_blank(),
-    
-    legend.position = "right",  
-    legend.title = element_text(face = "bold"), 
-    
-    legend.key.height = unit(0.8, "cm"), #largo de leyenda
-    legend.key.width = unit(0.8, "cm"), #ancho de leyenda
-    legend.background = element_rect(fill = "white", color = NA), # cuadro de leyenda
-    
-    axis.ticks.length = unit(0.2, "cm"), #longitud de los ticks
-    axis.ticks = element_line(linewidth = 0.5) #grosor de los ticks
+  # Heatmap con cuadrados (mismo concepto que el 1: tamaño por binwidth)
+  stat_bin2d(
+    binwidth = c(razon_x, razon_y),
+    aes(fill = ..count..),
+    color = "white"
   ) +
-  scale_x_continuous(breaks = seq(-limit_x,limit_x, by = razon_x), limits = c(-limit_x,limit_x)) +      # escala del plano cartesiano, seq: muestra
-  scale_y_continuous(breaks = seq(-limit_y, 0, by = razon_y), limits = c(-limit_y,0)) +   # escala del plano cartesiano, limit.a
   
-  geom_segment(aes(x = (-1)*mean_x, y = (-1)*mean_y, xend = (-1)*mean_x, yend =0), color = "red", size = 0.2) +  # Línea vertical roja
-  geom_segment(aes(x = mean_x, y = (-1)*mean_y, xend = mean_x, yend =0), color = "red", size = 0.2) +  # Línea vertical roja
-  geom_segment(aes(x = (-1)*mean_x, y = (-1)*mean_y, xend =mean_x, yend = (-1)*mean_y), color = "red", size = 0.2) +   # Línea horizontal roja
+  # Colores (si quieres EXACTO como el 1, usa solo c("yellow","orange","red"))
+  scale_fill_gradientn(
+    colors = c("lightyellow","yellow","#FFD700", "#FFA500", "#FF4500", "red"),
+    #values = scales::rescale(c(0,4,8,12,18,24))
+    values = scales::rescale(c(0,70,90,100,110,120))
+  ) +
   
-  # Para analizar solo los primero 6cm
-  #geom_segment(aes(x = (-1)*mean_x, y = -6, xend = (-1)*mean_x, yend =0), color = "red", size = 0.2) +  # Línea vertical roja
-  #geom_segment(aes(x = mean_x, y = -6, xend = mean_x, yend =0), color = "red", size = 0.2) +  # Línea vertical roja
+  # Puntos encima (para no "ensuciar", uso un alpha leve)
+  geom_point(
+    color = "brown",
+    size  = 1.2,
+    alpha = 0.65
+  ) +
   
-  geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) + 
+  # Conteo dentro de cada cuadro (coincide con binwidth)
+  geom_text(
+    stat = "bin2d",
+    aes(label = after_stat(count)),
+    binwidth = c(razon_x, razon_y),
+    vjust = 0.5,
+    color = "black",
+    size = 4,
+    fontface = "bold",
+    check_overlap = TRUE
+  ) + 
+  
+  # Tema base como el 1
+  theme_minimal(base_size = 10) +
+  labs(
+    title = "Both Calves - 6.55cm x 6.55cm",
+    x = "\nPMC",
+    y = "MCC\n",
+    fill = "Count"
+  ) +
+  
+  # Estética general estilo 1 (limpio, sin grid, fondo blanco, leyenda similar)
+  theme(
+    plot.title        = element_text(hjust = 0.5, face = "bold"),
+    axis.title        = element_text(face = "bold"),
+    axis.text.x       = element_text(size = 11),
+    axis.text.y       = element_text(size = 11),
+    legend.text       = element_text(size = 10),
+    panel.grid        = element_blank(),
+    panel.background  = element_rect(fill = "white"),
+    legend.position   = "right",
+    legend.title      = element_text(face = "bold"),
+    legend.background = element_rect(fill = "white", color = NA),
+    axis.ticks.length = unit(0.2, "cm"),
+    axis.ticks        = element_line(linewidth = 0.5)
+  ) +
+  
+  # Ejes: SOLO breaks + expand=0 (como el 1). El corte real lo hace coord_fixed.
+  scale_x_continuous(
+    breaks = seq(-9, 9, by = 3),
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    breaks = seq(-27, 3, by = 3),
+    expand = c(0, 0)
+  ) +
+  
+  # Líneas rojas (mantengo tu geometría)
+  geom_segment(aes(x = -mean_x, y = -mean_y, xend = -mean_x, yend = 0), color = "red", size = 0.2) +
+  geom_segment(aes(x =  mean_x, y = -mean_y, xend =  mean_x, yend = 0), color = "red", size = 0.2) +
+  geom_segment(aes(x = -mean_x, y = -mean_y, xend =  mean_x, yend = -mean_y), color = "red", size = 0.2) +
+  
+  # Referencias
+  geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) +
   geom_hline(yintercept = 0, linetype = "dashed", size = 0.2) +
-  coord_fixed(ratio = 1) +
-  annotate("text", x = -8, y = 0, label = "KF", 
-           vjust = -0.5, hjust = 0.5) 
-
-
-subset_representative$normalized_abscissa[subset_representative$normalized_abscissa<=-4.5 &
-                                            subset_representative$normalized_ordinate>=-4.5]
+  
+  # Corte REAL (como el 1)
+  coord_fixed(
+    ratio = 1,
+    xlim  = c(-limit_x, limit_x),
+    ylim  = c(-limit_y, 0)
+  ) +
+  annotate("rect",
+             xmin = -limit_x, xmax =  limit_x,
+             ymin = -limit_y, ymax =  0,
+             fill = NA, color = "black", linewidth = 0.1)
 
 # ======== GRÁFICA SOLO CONTORNOS DE DENSIDAD ----
 
@@ -283,7 +350,7 @@ window <- owin(xrange = xrange, yrange = yrange)
 points_ppp <- ppp(x, y, window = window)
 
 # Crear el gráfico de densidad
-sigma_value <- 1.5
+sigma_value <- 1.2
 #density <- density.ppp(points_ppp, sigma = bw.diggle(points_ppp))
 density <- density.ppp(points_ppp, sigma = sigma_value) #no elimina duplicados
 
@@ -305,9 +372,9 @@ ggplot() +
   #            aes(x = normalized_abscissa, y = normalized_ordinate),
   #            color = "black",
   #            size = 1) +
-  labs(title = "Left Calf", #Lo cambiamos cuando elejimos otra pierna
-       x = "VM",
-       y = "VSO",
+  labs(title = "Right Calf", #Lo cambiamos cuando elejimos otra pierna
+       x = "PMC",
+       y = "MCC",
        color = "   MP",
        fill = "Density") +
   theme(
@@ -321,9 +388,9 @@ ggplot() +
   scale_x_continuous(breaks = seq(-9, 9, by = 3), limits = c(-8.3, 8.3)) +
   scale_y_continuous(breaks = seq(-27, 3, by = 3), limits = c((-1) * mean_y-0.1, 0.5)) + #ya que la media es decimal, le aumento un poco 0.1
   
-  annotate("text", x = -3.8, y = 0, label = "Lateral", 
+  annotate("text", x = -3.8, y = 0, label = "Medial",
            vjust = -0.5, hjust = 0.5) +
-  annotate("text", x = 3.8, y = 0, label = "Medial", 
+  annotate("text", x = 3.8, y = 0, label = "Lateral",
            vjust = -0.5, hjust = 0.5) +
   
   geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) +
