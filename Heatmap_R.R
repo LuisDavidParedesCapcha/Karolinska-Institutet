@@ -1,15 +1,3 @@
-# renv::install("caret")
-# renv::install("mice")
-# renv::install("dbscan")
-# renv::install("ggplot2")
-# renv::install("viridis")
-# renv::install("spatstat")
-# renv::install("dplyr")
-# renv::install("ggforce") 
-# renv::install("ggimage") 
-# renv::install("magick") #QUEDÉ
-# renv::install("grid")
-
 library(ggplot2)
 library(caret)
 library(mice)
@@ -110,7 +98,7 @@ zone1 <- sqrt(8.1)
 zone12 <- sqrt(42.9)
 zonex <- 3
 
-square_size <- zone12
+square_size <- zonex
 
 hi<-5
 
@@ -295,6 +283,112 @@ ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordina
              xmin = -limit_x, xmax =  limit_x,
              ymin = -limit_y, ymax =  0,
              fill = NA, color = "black", linewidth = 0.1)
+
+# ------ COUNT + HEX HEATMAP (HEXÁGONOS REGULARES) ----
+
+library(ggplot2)
+library(viridis)
+library(hexbin)
+
+data$MP <- as.factor(data$MP)
+subset_representative <- data
+
+# === INPUT ÚNICO: lado del hexágono regular ===
+hex_side <- square_size   # o el valor que quieras (en la misma unidad de tus ejes)
+
+# Conversión lado -> separación de centros (binwidth)
+dx <- 1.5 * hex_side
+dy <- sqrt(3) * hex_side
+
+limit_x <- 8
+limit_y <- 25
+
+ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordinate)) +
+  
+  # Heatmap con hexágonos (conteo por celda)
+  geom_hex(
+    binwidth = c(dx, dy),
+    aes(fill = after_stat(count)),
+    color = "white"
+  ) +
+  
+  # Colores
+  scale_fill_gradientn(
+    colors = c("lightyellow","yellow","#FFD700", "#FFA500", "#FF4500", "red"),
+    values = scales::rescale(c(0,70,90,100,110,120))
+  ) +
+  
+  # Puntos encima
+  geom_point(
+    color = "brown",
+    size  = 1.2,
+    alpha = 0.65
+  ) +
+  
+  # Conteo dentro del hexágono
+  geom_text(
+    stat = "binhex",
+    aes(label = after_stat(count)),
+    binwidth = c(dx, dy),
+    vjust = 0.5,
+    color = "black",
+    size = 4,
+    fontface = "bold",
+    check_overlap = TRUE
+  ) +
+  
+  theme_minimal(base_size = 10) +
+  labs(
+    title = "Both Calves - Hexagons",
+    x = "\nPMC",
+    y = "MCC\n",
+    fill = "Count"
+  ) +
+  
+  theme(
+    plot.title        = element_text(hjust = 0.5, face = "bold"),
+    axis.title        = element_text(face = "bold"),
+    axis.text.x       = element_text(size = 11),
+    axis.text.y       = element_text(size = 11),
+    legend.text       = element_text(size = 10),
+    panel.grid        = element_blank(),
+    panel.background  = element_rect(fill = "white"),
+    legend.position   = "right",
+    legend.title      = element_text(face = "bold"),
+    legend.background = element_rect(fill = "white", color = NA),
+    axis.ticks.length = unit(0.2, "cm"),
+    axis.ticks        = element_line(linewidth = 0.5)
+  ) +
+  
+  # Ejes (mismos breaks que vienes usando)
+  scale_x_continuous(
+    breaks = seq(-9, 9, by = 3),
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    breaks = seq(-27, 3, by = 3),
+    expand = c(0, 0)
+  ) +
+  
+  # Líneas rojas (si quieres quitar warnings, cambia a annotate("segment", ...) después)
+  geom_segment(aes(x = -mean_x, y = -mean_y, xend = -mean_x, yend = 0), color = "red", size = 0.2) +
+  geom_segment(aes(x =  mean_x, y = -mean_y, xend =  mean_x, yend = 0), color = "red", size = 0.2) +
+  geom_segment(aes(x = -mean_x, y = -mean_y, xend =  mean_x, yend = -mean_y), color = "red", size = 0.2) +
+  
+  # Referencias
+  geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", size = 0.2) +
+  
+  # Corte real + borde encima
+  coord_fixed(
+    ratio = 1,
+    xlim  = c(-limit_x, limit_x),
+    ylim  = c(-limit_y, 0)
+  ) +
+  annotate("rect",
+           xmin = -limit_x, xmax =  limit_x,
+           ymin = -limit_y, ymax =  0,
+           fill = NA, color = "black", linewidth = 0.1)
 
 # ======== GRÁFICA SOLO CONTORNOS DE DENSIDAD ----
 
