@@ -18,8 +18,8 @@ library(readxl)
 
 
 data_heatmap <- read_excel("data/DB_heatmap_one_session_251204.xlsx")
-data <- data_heatmap[,c("Patient","Gender",
-                        "Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF","Circ_A","Circ_B","Circ_KF","Circ_MP")]
+data <- data_heatmap[,c("Patient","Gender","Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF",
+                        "Circ_A","Circ_B","Circ_KF","Circ_MP","LM_A","LM_B","LM_KF")]
 str(data_heatmap)
 # Validación y filtro riguroso ----
 
@@ -63,7 +63,7 @@ length(unique(data$Patient))
 data$normalized_abscissa <- data$proportion_abscissa*mean_x
 data$normalized_ordinate <- data$proportion_ordinate*mean_y
 
-# Subject Characteristics
+# Subject Characteristics ----
 patient <- length(unique(data$Patient))
 
 gernder_f <- length(data$Gender[data$MP==1 & data$Gender=="F"])
@@ -497,3 +497,25 @@ ggplot() +
   annotate("text", x = -8.3, y = 0, label = "KF", 
            vjust = -0.5, hjust = 0.5) 
 
+
+
+# 3D Calf ----
+str(data)
+
+excluir <- data[is.na(data$Circ_A) | is.na(data$Circ_B) | is.na(data$Circ_KF),]
+nrow(data)
+length(unique(data$Patient))
+rd <- data[!is.na(data$Circ_B) | !is.na(data$Circ_KF),]
+nrow(rd)
+length(unique(rd$Patient))
+
+summary(rd$Circ_A*0.2)
+summary(rd$LM_A)
+
+# Normalized 3D calf ----
+shapiro.test(data$Circ_A)
+shapiro.test(data$Circ_B)
+shapiro.test(data$Circ_KF)
+shapiro.test(data$Circ_MP)
+
+borrar <- data[is.na(data$Circ_MP),]
