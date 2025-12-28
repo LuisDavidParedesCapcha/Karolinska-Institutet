@@ -519,3 +519,109 @@ shapiro.test(data$Circ_KF)
 shapiro.test(data$Circ_MP)
 
 borrar <- data[is.na(data$Circ_MP),]
+
+
+data[is.na(data$Circ_KF),]
+# Excluyendo 
+data <- data[!is.na(data$Circ_KF) & !is.na(data$Circ_B) & !is.na(data$Circ_A),]
+str(data)
+
+mean_circA <- mean(data$Circ_A)
+mean_circB <- mean(data$Circ_B)
+mean_circKF <- mean(data$Circ_KF)
+
+## gráfica del plano
+# ======== TRONCO 3D (KF -> A -> B) DESDE CIRCUNFERENCIAS PROMEDIO ========
+
+# Paquetes
+#install.packages("plotly")   # si no lo tienes
+library(plotly)
+
+# ---- Inputs (ya los tienes calculados) ----
+# mean_circKF, mean_circA, mean_circB : circunferencias (cm)
+# mean_a, mean_b : distancias verticales (cm) (positivas), pero en z serán negativas
+
+C_KF <- mean_circKF
+C_A  <- mean_circA
+C_B  <- mean_circB
+
+z_KF <- 0
+z_A  <- -mean_a
+z_B  <- -mean_y   # debe ser más negativo que z_A (más abajo)
+
+# ---- Radios (circunferencia -> radio) ----
+r_KF <- C_KF / (2*pi)
+r_A  <- C_A  / (2*pi)
+r_B  <- C_B  / (2*pi)
+
+# ---- Función radio r(z) por tramos (KF->A y A->B) ----
+r_of_z <- function(z) {
+  if (z >= z_A) {
+    # tramo KF -> A (z en [z_A, 0])
+    t <- (z - z_KF) / (z_A - z_KF)   # z_KF=0, z_A<0
+    (1 - t) * r_KF + t * r_A
+  } else {
+    # tramo A -> B (z en [z_B, z_A])
+    t <- (z - z_A) / (z_B - z_A)
+    (1 - t) * r_A + t * r_B
+  }
+}
+
+# ---- Malla para superficie ----
+n_theta <- 160
+n_z     <- 120
+
+theta <- seq(0, 2*pi, length.out = n_theta)      # círculo completo
+z_seq <- seq(z_B, z_KF, length.out = n_z)        # de abajo hacia arriba (negativo -> 0)
+
+# Matrices para plotly surface
+X <- matrix(NA_real_, nrow = n_z, ncol = n_theta)
+Y <- matrix(NA_real_, nrow = n_z, ncol = n_theta)
+Z <- matrix(NA_real_, nrow = n_z, ncol = n_theta)
+
+for (i in seq_along(z_seq)) {
+  zi <- z_seq[i]
+  ri <- r_of_z(zi)
+  X[i, ] <- ri * cos(theta)
+  Y[i, ] <- ri * sin(theta)
+  Z[i, ] <- zi
+}
+
+# ---- Círculos de referencia en KF, A, B ----
+circle_xyz <- function(r, z, n = 200) {
+  th <- seq(0, 2*pi, length.out = n)
+  list(
+    x = r * cos(th),
+    y = r * sin(th),
+    z = rep(z, length(th))
+  )
+}
+
+cKF <- circle_xyz(r_KF, z_KF)
+cA  <- circle_xyz(r_A,  z_A)
+cB  <- circle_xyz(r_B,  z_B)
+
+# ---- Plot 3D ----
+p <- plot_ly() %>%
+  add_surface(
+    x = X, y = Y, z = Z,
+    opacity = 0.65,
+    showscale = FALSE
+  ) %>%
+  add_trace(type = "scatter3d", mode = "lines", x = cKF$x, y = cKF$y, z = cKF$z,
+            line = list(width = 6), name = "KF (z=0)") %>%
+  add_trace(type = "scatter3d", mode = "lines", x = cA$x, y = cA$y, z = cA$z,
+            line = list(width = 6), name = "A") %>%
+  add_trace(type = "scatter3d", mode = "lines", x = cB$x, y = cB$y, z = cB$z,
+            line = list(width = 6), name = "B") %>%
+  layout(
+    scene = list(
+      xaxis = list(title = "X (cm)"),
+      yaxis = list(title = "Y (cm)"),
+      zaxis = list(title = "Height z (cm)"),
+      aspectmode = "data"
+    ),
+    title = "3D Calf Trunk (centered, negative heights)"
+  )
+
+p
