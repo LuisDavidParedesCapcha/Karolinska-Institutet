@@ -500,19 +500,9 @@ ggplot() +
 
 
 # 3D Calf ----
-str(data)
 
-excluir <- data[is.na(data$Circ_A) | is.na(data$Circ_B) | is.na(data$Circ_KF),]
-nrow(data)
-length(unique(data$Patient))
-rd <- data[!is.na(data$Circ_B) | !is.na(data$Circ_KF),]
-nrow(rd)
-length(unique(rd$Patient))
 
-summary(rd$Circ_A*0.2)
-summary(rd$LM_A)
-
-# Normalized 3D calf ----
+# Normalized 3D calf 
 shapiro.test(data$Circ_A)
 shapiro.test(data$Circ_B)
 shapiro.test(data$Circ_KF)
@@ -520,10 +510,11 @@ shapiro.test(data$Circ_MP)
 
 borrar <- data[is.na(data$Circ_MP),]
 
-
-data[is.na(data$Circ_KF),]
 # Excluyendo 
+
 data <- data[!is.na(data$Circ_KF) & !is.na(data$Circ_B) & !is.na(data$Circ_A),]
+data <- data[!is.na(data$Circ_MP),]
+data[is.na(data$Circ_KF),]
 str(data)
 
 mean_circA <- mean(data$Circ_A)
@@ -537,7 +528,7 @@ mean_circKF <- mean(data$Circ_KF)
 #install.packages("plotly")   # si no lo tienes
 library(plotly)
 
-# ---- Inputs (ya los tienes calculados) ----
+# ---- Inputs (ya los tienes calculados)
 # mean_circKF, mean_circA, mean_circB : circunferencias (cm)
 # mean_a, mean_b : distancias verticales (cm) (positivas), pero en z serán negativas
 
@@ -549,12 +540,12 @@ z_KF <- 0
 z_A  <- -mean_a
 z_B  <- -mean_y   # debe ser más negativo que z_A (más abajo)
 
-# ---- Radios (circunferencia -> radio) ----
+# ---- Radios (circunferencia -> radio) 
 r_KF <- C_KF / (2*pi)
 r_A  <- C_A  / (2*pi)
 r_B  <- C_B  / (2*pi)
 
-# ---- Función radio r(z) por tramos (KF->A y A->B) ----
+# ---- Función radio r(z) por tramos (KF->A y A->B) 
 r_of_z <- function(z) {
   if (z >= z_A) {
     # tramo KF -> A (z en [z_A, 0])
@@ -567,7 +558,7 @@ r_of_z <- function(z) {
   }
 }
 
-# ---- Malla para superficie ----
+# ---- Malla para superficie 
 n_theta <- 160
 n_z     <- 120
 
@@ -587,7 +578,7 @@ for (i in seq_along(z_seq)) {
   Z[i, ] <- zi
 }
 
-# ---- Círculos de referencia en KF, A, B ----
+# ---- Círculos de referencia en KF, A, B 
 circle_xyz <- function(r, z, n = 200) {
   th <- seq(0, 2*pi, length.out = n)
   list(
@@ -601,7 +592,7 @@ cKF <- circle_xyz(r_KF, z_KF)
 cA  <- circle_xyz(r_A,  z_A)
 cB  <- circle_xyz(r_B,  z_B)
 
-# ---- Plot 3D ----
+# ---- Plot 3D 
 p <- plot_ly() %>%
   add_surface(
     x = X, y = Y, z = Z,
@@ -625,3 +616,305 @@ p <- plot_ly() %>%
   )
 
 p
+
+# Nuevo ----
+min(-data$ordinate)
+mean_y
+max(data$normalized_ordinate)
+mean(data$Circ_MP)
+# La idea es quedarse solo con una observación por sujeto en el eje Y
+a <- unique(data[,c("Patient","normalized_ordinate","Circ_MP")])
+b <- unique(data[,c("Patient","normalized_ordinate")])
+
+anti_join(a, b, by = c("Patient", "normalized_ordinate"))
+
+library(dplyr)
+
+full_join(
+  a %>% count(Patient, normalized_ordinate, name = "n_a"),
+  b %>% count(Patient, normalized_ordinate, name = "n_b"),
+  by = c("Patient", "normalized_ordinate")
+) %>%
+  filter(is.na(n_a) | is.na(n_b) | n_a != n_b)
+
+nrow(data)
+data[,c("Patient","normalized_ordinate","Cm_KF","Circ_MP")][data$Patient=="Ilya Talashkevich",]
+
+# Mega importante para poder generar el resto de gráficas:
+circ_by_h <- a %>%
+  group_by(normalized_ordinate, Patient) %>%
+  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
+  group_by(normalized_ordinate) %>%
+  summarise(
+    n_patients = n(),
+    circ_h = ifelse(n_patients > 1,
+                    mean(circ_patient),
+                    circ_patient),
+    .groups = "drop"
+  )
+
+
+# Gráfica con todas las circunferencias superpuestas : ----
+library(plotly)
+library(dplyr)
+
+# anclas
+z_KF <- 0
+z_A  <- -mean_a
+z_B  <- -mean_y
+
+r_KF <- mean_circKF / (2*pi)
+r_A  <- mean_circA  / (2*pi)
+r_B  <- mean_circB  / (2*pi)
+
+# radio por tramos (tronco)
+r_of_z <- function(z){
+  if (z >= z_A){
+    t <- (z - z_KF) / (z_A - z_KF)
+    (1 - t)*r_KF + t*r_A
+  } else {
+    t <- (z - z_A) / (z_B - z_A)
+    (1 - t)*r_A + t*r_B
+  }
+}
+
+# superficie del tronco
+theta <- seq(0, 2*pi, length.out = 160)
+z_seq <- seq(z_B, z_KF, length.out = 120)
+
+X <- Y <- Z <- matrix(NA, nrow = length(z_seq), ncol = length(theta))
+
+for (i in seq_along(z_seq)){
+  ri <- r_of_z(z_seq[i])
+  X[i,] <- ri * cos(theta)
+  Y[i,] <- ri * sin(theta)
+  Z[i,] <- z_seq[i]
+}
+
+# circunferencias adicionales por altura (intra -> inter ya calculadas)
+circ_lines <- circ_by_h %>%
+  mutate(
+    z = normalized_ordinate,
+    r = circ_h / (2*pi)
+  )
+
+make_circle <- function(r, z, n = 200){
+  th <- seq(0, 2*pi, length.out = n)
+  list(
+    x = r * cos(th),
+    y = r * sin(th),
+    z = rep(z, length(th))
+  )
+}
+
+p <- plot_ly() %>%
+  add_surface(x = X, y = Y, z = Z, opacity = 0.6, showscale = FALSE)
+
+for (i in seq_len(nrow(circ_lines))){
+  cci <- make_circle(circ_lines$r[i], circ_lines$z[i])
+  p <- p %>% add_trace(
+    type = "scatter3d",
+    mode = "lines",
+    x = cci$x,
+    y = cci$y,
+    z = cci$z,
+    line = list(width = 2),
+    showlegend = FALSE
+  )
+}
+
+p <- p %>% layout(
+  scene = list(
+    aspectmode = "data",
+    xaxis = list(title = "X"),
+    yaxis = list(title = "Y"),
+    zaxis = list(title = "Height")
+  ),
+  title = "3D Trunk with Circumferences by Height"
+)
+
+p
+
+# Suavizado : ----
+library(dplyr)
+library(plotly)
+
+SMOOTH_DF <- 6
+
+z_KF <- 0
+z_A  <- -mean_a
+z_B  <- -mean_y
+
+circ_by_h <- data %>%
+  group_by(normalized_ordinate, Patient) %>%
+  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
+  group_by(normalized_ordinate) %>%
+  summarise(
+    n_patients = n(),
+    circ_h = ifelse(n_patients > 1, mean(circ_patient), circ_patient),
+    .groups = "drop"
+  )
+
+anchors <- tibble(
+  z = c(z_KF, z_A, z_B),
+  circ = c(mean_circKF, mean_circA, mean_circB),
+  w = c(1e6, 1e6, 1e6)
+)
+
+fit_dat <- bind_rows(
+  circ_by_h %>% transmute(z = normalized_ordinate, circ = circ_h, w = 1),
+  anchors
+) %>% arrange(z)
+
+sp <- smooth.spline(
+  x = fit_dat$z,
+  y = fit_dat$circ,
+  w = fit_dat$w,
+  df = SMOOTH_DF
+)
+
+z_seq <- seq(min(fit_dat$z), max(fit_dat$z), length.out = 180)
+circ_seq <- predict(sp, x = z_seq)$y
+r_seq <- circ_seq / (2*pi)
+
+r_of_z <- function(z)
+  approx(x = z_seq, y = r_seq, xout = z, rule = 2)$y
+
+theta <- seq(0, 2*pi, length.out = 220)
+z_grid <- seq(z_B, z_KF, length.out = 180)
+
+X <- Y <- Z <- matrix(NA_real_, nrow = length(z_grid), ncol = length(theta))
+for (i in seq_along(z_grid)) {
+  ri <- r_of_z(z_grid[i])
+  X[i,] <- ri * cos(theta)
+  Y[i,] <- ri * sin(theta)
+  Z[i,] <- z_grid[i]
+}
+
+make_circle <- function(r, z, n = 260){
+  th <- seq(0, 2*pi, length.out = n)
+  list(x = r*cos(th), y = r*sin(th), z = rep(z, length(th)))
+}
+
+cKF <- make_circle(mean_circKF/(2*pi), z_KF)
+cA  <- make_circle(mean_circA /(2*pi), z_A)
+cB  <- make_circle(mean_circB /(2*pi), z_B)
+
+plot_ly() %>%
+  add_surface(x = X, y = Y, z = Z, opacity = 0.65, showscale = FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cKF$x, y=cKF$y, z=cKF$z, line=list(width=8), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cA$x,  y=cA$y,  z=cA$z,  line=list(width=8), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cB$x,  y=cB$y,  z=cB$z,  line=list(width=8), showlegend=FALSE) %>%
+  layout(
+    scene = list(
+      aspectmode = "data",
+      xaxis = list(title = "X"),
+      yaxis = list(title = "Y"),
+      zaxis = list(title = "Height")
+    ),
+    title = "3D Calf - Smoothed Trunk"
+  )
+
+
+# Validación:  ----
+cbind(
+  which_max = c("KF","A","B")[which.max(c(mean_circKF, mean_circA, mean_circB))],
+  max_value = max(mean_circKF, mean_circA, mean_circB),
+  KF = mean_circKF, A = mean_circA, B = mean_circB
+)
+mean_y
+stopifnot(mean_circA >= mean_circKF, mean_circA >= mean_circB) # Importante para detener
+
+# Transformando : generatriz = mean_y, se hace diferencial para calcular z (altura) ----
+library(dplyr)
+library(plotly)
+
+SMOOTH_DF <- 6
+
+# s = distancia sobre superficie desde KF (positiva hacia abajo)
+# OJO: si normalized_ordinate ya es negativo hacia abajo, lo vuelvo positivo
+circ_by_s <- data %>%
+  group_by(normalized_ordinate, Patient) %>%
+  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
+  group_by(normalized_ordinate) %>%
+  summarise(
+    n_patients = n(),
+    circ_h = ifelse(n_patients > 1, mean(circ_patient), circ_patient),
+    .groups = "drop"
+  ) %>%
+  transmute(s = -normalized_ordinate, circ = circ_h) %>%
+  arrange(s)
+
+s_KF <- 0
+s_A  <- mean_a
+s_B  <- mean_y   # tu "mean_y" es la distancia superficial hasta B (según lo que dijiste)
+
+anchors <- tibble(
+  s = c(s_KF, s_A, s_B),
+  circ = c(mean_circKF, mean_circA, mean_circB),
+  w = c(1e6, 1e6, 1e6)
+)
+
+fit_dat <- bind_rows(
+  circ_by_s %>% mutate(w = 1),
+  anchors
+) %>% arrange(s)
+
+sp <- smooth.spline(x = fit_dat$s, y = fit_dat$circ, w = fit_dat$w, df = SMOOTH_DF)
+
+s_grid <- seq(min(fit_dat$s), max(fit_dat$s), length.out = 400)
+
+circ_grid <- predict(sp, x = s_grid)$y
+r_grid <- circ_grid / (2*pi)
+
+drds <- predict(sp, x = s_grid, deriv = 1)$y / (2*pi)
+
+dzds <- sqrt(pmax(0, 1 - drds^2))
+
+z_grid_pos <- c(0, cumsum((dzds[-1] + dzds[-length(dzds)]) / 2 * diff(s_grid)))
+
+# altura axial negativa hacia abajo (KF=0, abajo negativo)
+z_grid <- -z_grid_pos
+
+r_of_s <- function(s) approx(s_grid, r_grid, xout = s, rule = 2)$y
+z_of_s <- function(s) approx(s_grid, z_grid, xout = s, rule = 2)$y
+
+theta <- seq(0, 2*pi, length.out = 220)
+s_surf <- seq(0, max(s_grid), length.out = 180)
+
+X <- Y <- Z <- matrix(NA_real_, nrow = length(s_surf), ncol = length(theta))
+
+for (i in seq_along(s_surf)) {
+  ri <- r_of_s(s_surf[i])
+  zi <- z_of_s(s_surf[i])
+  X[i,] <- ri * cos(theta)
+  Y[i,] <- ri * sin(theta)
+  Z[i,] <- zi
+}
+
+make_circle <- function(r, z, n = 260){
+  th <- seq(0, 2*pi, length.out = n)
+  list(x = r*cos(th), y = r*sin(th), z = rep(z, length(th)))
+}
+
+z_KF <- 0
+z_Ax <- z_of_s(s_A)
+z_Bx <- z_of_s(s_B)
+
+cKF <- make_circle(mean_circKF/(2*pi), z_KF)
+cA  <- make_circle(mean_circA /(2*pi), z_Ax)
+cB  <- make_circle(mean_circB /(2*pi), z_Bx)
+
+plot_ly() %>%
+  add_surface(x = X, y = Y, z = Z, opacity = 0.65, showscale = FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cKF$x, y=cKF$y, z=cKF$z, line=list(width=8), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cA$x,  y=cA$y,  z=cA$z,  line=list(width=8), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cB$x,  y=cB$y,  z=cB$z,  line=list(width=8), showlegend=FALSE) %>%
+  layout(
+    scene = list(aspectmode = "data",
+                 xaxis = list(title = "X"),
+                 yaxis = list(title = "Y"),
+                 zaxis = list(title = "Axial height z")),
+    title = "3D Calf: same curvature, axial height recovered from surface length"
+  )
+
