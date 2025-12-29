@@ -510,7 +510,7 @@ shapiro.test(data$Circ_MP)
 
 borrar <- data[is.na(data$Circ_MP),]
 
-# Excluyendo 
+# Filtros 
 
 data <- data[!is.na(data$Circ_KF) & !is.na(data$Circ_B) & !is.na(data$Circ_A),]
 data <- data[!is.na(data$Circ_MP),]
@@ -617,7 +617,7 @@ p <- plot_ly() %>%
 
 p
 
-# Nuevo ----
+# Filtros y generaciòn de parámetros ----
 min(-data$ordinate)
 mean_y
 max(data$normalized_ordinate)
@@ -918,3 +918,373 @@ plot_ly() %>%
     title = "3D Calf: same curvature, axial height recovered from surface length"
   )
 
+
+# validación de distancia generatriz y longitud axial de la ordenada ----
+tail(s_grid, 1)          # debe ser ~ mean_y
+tail(z_grid_pos, 1)      # altura axial total
+
+sum(sqrt( (diff(z_grid_pos))^2 + (diff(r_grid))^2 )) # Todo está bien calculado, el resultado da la generatriz
+# Sector encima del prototype : ----
+library(dplyr)
+library(plotly)
+
+SMOOTH_DF <- 6
+
+FACTOR_KF <- 0.15*2
+FACTOR_A  <- 0.20*2
+FACTOR_B  <- 0.20*2
+
+THETA0 <- 0            # dirección central (rad). Cambia si quieres rotar el "hexágono"
+N_THETA_TRUNK <- 220
+N_S_TRUNK     <- 180
+
+N_THETA_PATCH <- 120
+N_S_PATCH     <- 180
+
+TRUNK_OPACITY <- 0.55
+PATCH_OPACITY <- 0.85
+
+TRUNK_COLOR <- "gray90"
+PATCH_COLOR <- "brown"
+
+circ_by_s <- data %>%
+  group_by(normalized_ordinate, Patient) %>%
+  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
+  group_by(normalized_ordinate) %>%
+  summarise(
+    n_patients = n(),
+    circ_h = ifelse(n_patients > 1, mean(circ_patient), circ_patient),
+    .groups = "drop"
+  ) %>%
+  transmute(s = -normalized_ordinate, circ = circ_h) %>%
+  arrange(s)
+
+s_KF <- 0
+s_A  <- mean_a
+s_B  <- mean_y
+
+anchors <- tibble(
+  s = c(s_KF, s_A, s_B),
+  circ = c(mean_circKF, mean_circA, mean_circB),
+  w = c(1e6, 1e6, 1e6)
+)
+
+fit_dat <- bind_rows(
+  circ_by_s %>% mutate(w = 1),
+  anchors
+) %>% arrange(s)
+
+sp <- smooth.spline(x = fit_dat$s, y = fit_dat$circ, w = fit_dat$w, df = SMOOTH_DF)
+
+s_grid <- seq(min(fit_dat$s), max(fit_dat$s), length.out = 400)
+
+circ_grid <- predict(sp, x = s_grid)$y
+r_grid <- circ_grid / (2*pi)
+
+drds <- predict(sp, x = s_grid, deriv = 1)$y / (2*pi)
+dzds <- sqrt(pmax(0, 1 - drds^2))
+
+z_grid_pos <- c(0, cumsum((dzds[-1] + dzds[-length(dzds)]) / 2 * diff(s_grid)))
+z_grid <- -z_grid_pos
+
+r_of_s <- function(s) approx(s_grid, r_grid, xout = s, rule = 2)$y
+z_of_s <- function(s) approx(s_grid, z_grid, xout = s, rule = 2)$y
+
+make_circle <- function(r, z, n = 260){
+  th <- seq(0, 2*pi, length.out = n)
+  list(x = r*cos(th), y = r*sin(th), z = rep(z, length(th)))
+}
+
+z_KF <- 0
+z_Ax <- z_of_s(s_A)
+z_Bx <- z_of_s(s_B)
+
+cKF <- make_circle(mean_circKF/(2*pi), z_KF)
+cA  <- make_circle(mean_circA /(2*pi), z_Ax)
+cB  <- make_circle(mean_circB /(2*pi), z_Bx)
+
+theta_trunk <- seq(0, 2*pi, length.out = N_THETA_TRUNK)
+s_trunk <- seq(0, max(s_grid), length.out = N_S_TRUNK)
+
+X <- Y <- Z <- matrix(NA_real_, nrow = length(s_trunk), ncol = length(theta_trunk))
+for (i in seq_along(s_trunk)) {
+  ri <- r_of_s(s_trunk[i])
+  zi <- z_of_s(s_trunk[i])
+  X[i,] <- ri * cos(theta_trunk)
+  Y[i,] <- ri * sin(theta_trunk)
+  Z[i,] <- zi
+}
+
+w_KF <- 2*pi*FACTOR_KF
+w_A  <- 2*pi*FACTOR_A
+w_B  <- 2*pi*FACTOR_B
+
+width_of_z <- function(z){
+  if (z >= z_Ax) {
+    t <- (z - z_KF) / (z_Ax - z_KF)
+    (1 - t)*w_KF + t*w_A
+  } else {
+    t <- (z - z_Ax) / (z_Bx - z_Ax)
+    (1 - t)*w_A + t*w_B
+  }
+}
+
+theta_unit <- seq(0, 1, length.out = N_THETA_PATCH)
+s_patch <- seq(0, s_B, length.out = N_S_PATCH)
+
+Xp <- Yp <- Zp <- matrix(NA_real_, nrow = length(s_patch), ncol = length(theta_unit))
+Sp <- matrix(1, nrow = length(s_patch), ncol = length(theta_unit))
+
+for (i in seq_along(s_patch)) {
+  ri <- r_of_s(s_patch[i])
+  zi <- z_of_s(s_patch[i])
+  wi <- width_of_z(zi)
+  th_min <- THETA0 - wi/2
+  th_max <- THETA0 + wi/2
+  th_row <- th_min + (th_max - th_min) * theta_unit
+  Xp[i,] <- ri * cos(th_row)
+  Yp[i,] <- ri * sin(th_row)
+  Zp[i,] <- zi
+}
+
+p <- plot_ly() %>%
+  add_surface(
+    x = X, y = Y, z = Z,
+    surfacecolor = matrix(1, nrow = nrow(X), ncol = ncol(X)),
+    colorscale = list(list(0, TRUNK_COLOR), list(1, TRUNK_COLOR)),
+    opacity = TRUNK_OPACITY,
+    showscale = FALSE,
+    name = "Trunk"
+  ) %>%
+  add_surface(
+    x = Xp, y = Yp, z = Zp,
+    surfacecolor = Sp,
+    colorscale = list(list(0, PATCH_COLOR), list(1, PATCH_COLOR)),
+    opacity = PATCH_OPACITY,
+    showscale = FALSE,
+    name = "Curved hex patch"
+  ) %>%
+  add_trace(type="scatter3d", mode="lines", x=cKF$x, y=cKF$y, z=cKF$z, line=list(width=7), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cA$x,  y=cA$y,  z=cA$z,  line=list(width=7), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cB$x,  y=cB$y,  z=cB$z,  line=list(width=7), showlegend=FALSE) %>%
+  layout(
+    scene = list(
+      aspectmode = "data",
+      xaxis = list(title = "X"),
+      yaxis = list(title = "Y"),
+      zaxis = list(title = "Axial height z")
+    ),
+    title = "3D Calf + Curved Hexagon Patch"
+  )
+
+p
+
+
+# --- NUEVO:----
+library(dplyr)
+library(plotly)
+library(spatstat)
+# library(spatstat.geom)
+# library(spatstat.core)
+
+SMOOTH_DF <- 6
+
+FACTOR_KF <- 0.15*2
+FACTOR_A  <- 0.20*2
+FACTOR_B  <- 0.20*2
+
+THETA0 <- 0
+
+N_THETA_TRUNK <- 220
+N_S_TRUNK     <- 180
+
+N_THETA_PATCH <- 140
+N_S_PATCH     <- 220
+
+TRUNK_OPACITY <- 0.40
+PATCH_OPACITY <- 0.98
+
+TRUNK_COLOR <- "black"
+
+SIGMA_VALUE <- 1.2
+DENS_COLORSCALE <- "Viridis"
+
+SHOW_POINTS <- TRUE
+POINT_SIZE <- 2.5
+PALETTE_MP <- c("red", "orange", "pink", "purple", "brown")
+
+data$MP <- as.factor(data$MP)
+
+circ_by_s <- data %>%
+  group_by(normalized_ordinate, Patient) %>%
+  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
+  group_by(normalized_ordinate) %>%
+  summarise(
+    n_patients = n(),
+    circ_h = ifelse(n_patients > 1, mean(circ_patient), circ_patient),
+    .groups = "drop"
+  ) %>%
+  transmute(s = -normalized_ordinate, circ = circ_h) %>%
+  arrange(s)
+
+s_KF <- 0
+s_A  <- mean_a
+s_B  <- mean_y
+
+anchors <- tibble(
+  s = c(s_KF, s_A, s_B),
+  circ = c(mean_circKF, mean_circA, mean_circB),
+  w = c(1e6, 1e6, 1e6)
+)
+
+fit_dat <- bind_rows(
+  circ_by_s %>% mutate(w = 1),
+  anchors
+) %>% arrange(s)
+
+sp <- smooth.spline(x = fit_dat$s, y = fit_dat$circ, w = fit_dat$w, df = SMOOTH_DF)
+
+s_grid <- seq(min(fit_dat$s), max(fit_dat$s), length.out = 600)
+circ_grid <- predict(sp, x = s_grid)$y
+r_grid <- circ_grid / (2*pi)
+
+drds <- predict(sp, x = s_grid, deriv = 1)$y / (2*pi)
+dzds <- sqrt(pmax(0, 1 - drds^2))
+
+z_grid_pos <- c(0, cumsum((dzds[-1] + dzds[-length(dzds)]) / 2 * diff(s_grid)))
+z_grid <- -z_grid_pos
+
+r_of_s <- function(s) approx(s_grid, r_grid, xout = s, rule = 2)$y
+z_of_s <- function(s) approx(s_grid, z_grid, xout = s, rule = 2)$y
+
+z_KF <- 0
+z_Ax <- z_of_s(s_A)
+z_Bx <- z_of_s(s_B)
+
+make_circle <- function(r, z, n = 260){
+  th <- seq(0, 2*pi, length.out = n)
+  list(x = r*cos(th), y = r*sin(th), z = rep(z, length(th)))
+}
+
+cKF <- make_circle(mean_circKF/(2*pi), z_KF)
+cA  <- make_circle(mean_circA /(2*pi), z_Ax)
+cB  <- make_circle(mean_circB /(2*pi), z_Bx)
+
+theta_trunk <- seq(0, 2*pi, length.out = N_THETA_TRUNK)
+s_trunk <- seq(0, max(s_grid), length.out = N_S_TRUNK)
+
+X <- Y <- Z <- matrix(NA_real_, nrow = length(s_trunk), ncol = length(theta_trunk))
+for (i in seq_along(s_trunk)) {
+  ri <- r_of_s(s_trunk[i])
+  zi <- z_of_s(s_trunk[i])
+  X[i,] <- ri * cos(theta_trunk)
+  Y[i,] <- ri * sin(theta_trunk)
+  Z[i,] <- zi
+}
+
+w_KF <- 2*pi*FACTOR_KF
+w_A  <- 2*pi*FACTOR_A
+w_B  <- 2*pi*FACTOR_B
+
+width_of_z <- function(z){
+  if (z >= z_Ax) {
+    t <- (z - z_KF) / (z_Ax - z_KF)
+    (1 - t)*w_KF + t*w_A
+  } else {
+    t <- (z - z_Ax) / (z_Bx - z_Ax)
+    (1 - t)*w_A + t*w_B
+  }
+}
+
+theta_unit <- seq(0, 1, length.out = N_THETA_PATCH)
+s_patch <- seq(0, s_B, length.out = N_S_PATCH)
+
+Xp <- Yp <- Zp <- matrix(NA_real_, nrow = length(s_patch), ncol = length(theta_unit))
+ThetaPatch <- matrix(NA_real_, nrow = length(s_patch), ncol = length(theta_unit))
+Rpatch <- matrix(NA_real_, nrow = length(s_patch), ncol = length(theta_unit))
+
+for (i in seq_along(s_patch)) {
+  ri <- r_of_s(s_patch[i])
+  zi <- z_of_s(s_patch[i])
+  wi <- width_of_z(zi)
+  th_min <- THETA0 - wi/2
+  th_max <- THETA0 + wi/2
+  th_row <- th_min + (th_max - th_min) * theta_unit
+  Xp[i,] <- ri * cos(th_row)
+  Yp[i,] <- ri * sin(th_row)
+  Zp[i,] <- zi
+  ThetaPatch[i,] <- th_row
+  Rpatch[i,] <- ri
+}
+
+xrange <- c(-mean_x, mean_x)
+yrange <- c(-mean_y, 0)
+win <- owin(xrange = xrange, yrange = yrange)
+pp <- ppp(x = data$normalized_abscissa, y = data$normalized_ordinate, window = win)
+
+dens_im <- density.ppp(pp, sigma = SIGMA_VALUE)
+
+x2_mat <- (ThetaPatch - THETA0) * Rpatch
+y2_mat <- -matrix(s_patch, nrow = length(s_patch), ncol = length(theta_unit))  # vuelve a ordinada negativa
+
+dens_vals <- spatstat.geom::lookup.im(dens_im, x = as.vector(x2_mat), y = as.vector(y2_mat))
+Dmat <- matrix(dens_vals, nrow = nrow(x2_mat), ncol = ncol(x2_mat), byrow = FALSE)
+
+p <- plot_ly() %>%
+  add_surface(
+    x = X, y = Y, z = Z,
+    surfacecolor = matrix(1, nrow = nrow(X), ncol = ncol(X)),
+    colorscale = list(list(0, TRUNK_COLOR), list(1, TRUNK_COLOR)),
+    opacity = TRUNK_OPACITY,
+    showscale = FALSE,
+    name = "Trunk"
+  ) %>%
+  add_surface(
+    x = Xp, y = Yp, z = Zp,
+    surfacecolor = Dmat,
+    colorscale = DENS_COLORSCALE,
+    opacity = PATCH_OPACITY,
+    showscale = TRUE,
+    name = "Density on patch",
+    colorbar = list(title = "Density")
+  ) %>%
+  add_trace(type="scatter3d", mode="lines", x=cKF$x, y=cKF$y, z=cKF$z, line=list(width=7), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cA$x,  y=cA$y,  z=cA$z,  line=list(width=7), showlegend=FALSE) %>%
+  add_trace(type="scatter3d", mode="lines", x=cB$x,  y=cB$y,  z=cB$z,  line=list(width=7), showlegend=FALSE)
+
+if (SHOW_POINTS) {
+  pts <- data %>%
+    transmute(
+      s = -normalized_ordinate,
+      r = r_of_s(s),
+      theta = THETA0 + normalized_abscissa / pmax(r, 1e-9),
+      x3 = r * cos(theta),
+      y3 = r * sin(theta),
+      z3 = z_of_s(s),
+      MP = MP
+    )
+  
+  p <- p %>%
+    add_trace(
+      data = pts,
+      type = "scatter3d",
+      mode = "markers",
+      x = ~x3, y = ~y3, z = ~z3,
+      color = ~MP,
+      colors = PALETTE_MP,
+      marker = list(size = POINT_SIZE, opacity = 0.95),
+      name = "MP"
+    )
+}
+
+p <- p %>% layout(
+  scene = list(
+    aspectmode = "data",
+    xaxis = list(title = "X"),
+    yaxis = list(title = "Y"),
+    zaxis = list(title = "Axial height z")
+  ),
+  title = "Prototype 3D"
+)
+
+p
