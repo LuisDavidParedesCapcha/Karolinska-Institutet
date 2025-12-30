@@ -19,20 +19,39 @@ library(readxl)
 
 data_heatmap <- read_excel("data/DB_heatmap_one_session_251204.xlsx")
 data <- data_heatmap[,c("Patient","Gender","Leg","L_M","MP","VM","KF_A","KF_B_excel","Cm_VM","Cm_KF",
-                        "Circ_A","Circ_B","Circ_KF","Circ_MP","LM_A","LM_B","LM_KF")]
+                        "Circ_A","Circ_B","Circ_KF","Circ_MP","LM_A","LM_B","LM_KF",
+                        "Age","Physical Activity","Tobacco","Weight","Height")]
 str(data_heatmap)
-# Validación y filtro riguroso ----
+# Validación y filtro riguroso 2D ----
 
 data <- data[!is.na(data$Patient) & !is.na(data$Cm_KF) & !is.na(data$Cm_VM) & !(data$KF_B_excel==0),]
-
-nrow(data)
 
 #df_unicos[is.na(df_unicos$Circ_A),] # Validar
 df_unicos <- data[data$MP==1,]
 df_repeated <- df_unicos %>% group_by(Patient) %>% filter(n()>1) %>% ungroup() #validar pacientes con diferentes medidas anatómicas
 
 
-# Normalized Calf ----
+
+# 3D Filtro Circ ----
+
+shapiro.test(data$Circ_A)
+shapiro.test(data$Circ_B)
+shapiro.test(data$Circ_KF)
+shapiro.test(data$Circ_MP)
+
+# Filtros 
+
+data <- data[!is.na(data$Circ_KF) & !is.na(data$Circ_B) & !is.na(data$Circ_A),]
+data <- data[!is.na(data$Circ_MP),]
+data[is.na(data$Circ_KF),]
+str(data)
+
+mean_circA <- mean(data$Circ_A)
+mean_circB <- mean(data$Circ_B)
+mean_circKF <- mean(data$Circ_KF)
+
+
+# Normalized Preprocessing ----
 data$abscissa <- data$`Circ_A`*0.2 
 data$ordinate <- data$KF_B_excel
 
@@ -63,6 +82,46 @@ length(unique(data$Patient))
 data$normalized_abscissa <- data$proportion_abscissa*mean_x
 data$normalized_ordinate <- data$proportion_ordinate*mean_y
 
+
+# Filtros y generaciòn de parámetros 3D ----
+min(-data$ordinate)
+mean_y
+max(data$normalized_ordinate)
+mean(data$Circ_MP)
+# La idea es quedarse solo con una observación por sujeto en el eje Y
+a <- unique(data[,c("Patient","normalized_ordinate","Circ_MP")])
+b <- unique(data[,c("Patient","normalized_ordinate")])
+
+anti_join(a, b, by = c("Patient", "normalized_ordinate"))
+
+library(dplyr)
+
+full_join(
+  a %>% count(Patient, normalized_ordinate, name = "n_a"),
+  b %>% count(Patient, normalized_ordinate, name = "n_b"),
+  by = c("Patient", "normalized_ordinate")
+) %>%
+  filter(is.na(n_a) | is.na(n_b) | n_a != n_b)
+
+nrow(data)
+data[,c("Patient","normalized_ordinate","Cm_KF","Circ_MP")][data$Patient=="Ilya Talashkevich",]
+
+# Mega importante para poder generar el resto de gráficas 3D:
+circ_by_h <- a %>%
+  group_by(normalized_ordinate, Patient) %>%
+  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
+  group_by(normalized_ordinate) %>%
+  summarise(
+    n_patients = n(),
+    circ_h = ifelse(n_patients > 1,
+                    mean(circ_patient),
+                    circ_patient),
+    .groups = "drop"
+  )
+
+
+
+
 # Subject Characteristics ----
 patient <- length(unique(data$Patient))
 
@@ -74,7 +133,9 @@ leg_right <- length(data$Leg[data$MP==1 & data$Leg=="R"])
 L_M_lat <- length(data$L_M[data$MP==1 & data$L_M=="L"])
 L_M_med <- length(data$L_M[data$MP==1 & data$L_M=="M"])
 
-shapiro.test(data$VM[data$MP==1])
+# Nomality
+shapiro.test(data$Height[data$MP==1])
+
 meas_VM <-  mean(data$VM[data$MP==1])
 meas_KF_B <- mean(data$KF_B_excel[data$MP==1])
 meas_KF_A <- mean(data$KF_A[data$MP==1], na.rm = TRUE)
@@ -83,14 +144,18 @@ meas_Circ_A <- median(data$Circ_A[data$MP==1])
 meas_Circ_B <- median(data$Circ_B[data$MP==1])
 meas_Circ_KF <-  mean(data$Circ_KF[data$MP==1])
 
+meas_Age <- median(data$Age[data$MP==1], na.rm=TRUE)
+meas_Weig <- median(data$Weight[data$MP==1], na.rm=TRUE)
+meas_Heigh <- median(data$Height[data$MP==1], na.rm=TRUE)
+
 length(data$MP[data$MP==5])
 #Error
-e <- qt(0.975, df = length(data$KF_A[data$MP == 1]) - 1) *
-  (sd(data$KF_A[data$MP == 1], na.rm = TRUE) / sqrt(length(data$KF_A[data$MP == 1])))
+e <- qt(0.975, df = length(data$Circ_KF[data$MP == 1]) - 1) *
+  (sd(data$Circ_KF[data$MP == 1], na.rm = TRUE) / sqrt(length(data$Circ_KF[data$MP == 1])))
 
-meas_KF_A-e
+meas_Circ_KF+e
 
-quantile(data$Circ_B[data$MP==1],0.75)
+quantile(data$Height[data$MP==1],na.rm = TRUE,0.25)
 
 
 # Bins Measure ----
@@ -98,7 +163,8 @@ zone1 <- sqrt(8.1)
 zone12 <- sqrt(42.9)
 zonex <- 3
 
-square_size <- zonex
+square_size <- zone1
+lado_hex <- 1.77 #zon1area
 
 hi<-5
 
@@ -206,8 +272,8 @@ ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordina
   # Colores (si quieres EXACTO como el 1, usa solo c("yellow","orange","red"))
   scale_fill_gradientn(
     colors = c("lightyellow","yellow","#FFD700", "#FFA500", "#FF4500", "red"),
-    #values = scales::rescale(c(0,4,8,12,18,24))
-    values = scales::rescale(c(0,70,90,100,110,120))
+    values = scales::rescale(c(0,4,8,12,18,24))
+    #values = scales::rescale(c(0,70,90,100,110,120))
   ) +
   
   # Puntos encima (para no "ensuciar", uso un alpha leve)
@@ -232,7 +298,7 @@ ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordina
   # Tema base como el 1
   theme_minimal(base_size = 10) +
   labs(
-    title = "Both Calves - 6.55cm x 6.55cm",
+    title = "Both Calves - 2.85cm x 2.85cm",
     x = "\nPMC",
     y = "MCC\n",
     fill = "Count"
@@ -295,7 +361,7 @@ subset_representative <- data
 
 # === INPUT ÚNICO: lado del hexágono regular ===
 hex_side <- square_size   # o el valor que quieras (en la misma unidad de tus ejes)
-
+hex_side <- lado_hex
 # Conversión lado -> separación de centros (binwidth)
 dx <- 1.5 * hex_side
 dy <- sqrt(3) * hex_side
@@ -315,7 +381,8 @@ ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordina
   # Colores
   scale_fill_gradientn(
     colors = c("lightyellow","yellow","#FFD700", "#FFA500", "#FF4500", "red"),
-    values = scales::rescale(c(0,70,90,100,110,120))
+    values = scales::rescale(c(0,4,8,12,18,24))
+    #values = scales::rescale(c(0,70,90,100,110,120))
   ) +
   
   # Puntos encima
@@ -420,7 +487,7 @@ ggplot(subset_representative, aes(x = normalized_abscissa, y = normalized_ordina
 
 
 
-#  HEATMAP DENSIDAD (GAUSSIANO) =====
+#  HEATMAP DENSIDAD (GAUSSIANO) 2D =====
 library(spatstat)
 library(viridis)
 
@@ -466,7 +533,7 @@ ggplot() +
   #            aes(x = normalized_abscissa, y = normalized_ordinate),
   #            color = "black",
   #            size = 1) +
-  labs(title = "Right Calf", #Lo cambiamos cuando elejimos otra pierna
+  labs(title = "Left Calf", #Lo cambiamos cuando elejimos otra pierna
        x = "PMC",
        y = "MCC",
        color = "   MP",
@@ -481,10 +548,10 @@ ggplot() +
   ) +
   scale_x_continuous(breaks = seq(-9, 9, by = 3), limits = c(-8.3, 8.3)) +
   scale_y_continuous(breaks = seq(-27, 3, by = 3), limits = c((-1) * mean_y-0.1, 0.5)) + #ya que la media es decimal, le aumento un poco 0.1
-  
-  annotate("text", x = -3.8, y = 0, label = "Medial",
+
+  annotate("text", x = -3.8, y = 0, label = "Lateral",
            vjust = -0.5, hjust = 0.5) +
-  annotate("text", x = 3.8, y = 0, label = "Lateral",
+  annotate("text", x = 3.8, y = 0, label = "Medial",
            vjust = -0.5, hjust = 0.5) +
   
   geom_vline(xintercept = 0, linetype = "dashed", size = 0.2) +
@@ -499,29 +566,8 @@ ggplot() +
 
 
 
-# 3D Calf ----
 
 
-# Normalized 3D calf 
-shapiro.test(data$Circ_A)
-shapiro.test(data$Circ_B)
-shapiro.test(data$Circ_KF)
-shapiro.test(data$Circ_MP)
-
-borrar <- data[is.na(data$Circ_MP),]
-
-# Filtros 
-
-data <- data[!is.na(data$Circ_KF) & !is.na(data$Circ_B) & !is.na(data$Circ_A),]
-data <- data[!is.na(data$Circ_MP),]
-data[is.na(data$Circ_KF),]
-str(data)
-
-mean_circA <- mean(data$Circ_A)
-mean_circB <- mean(data$Circ_B)
-mean_circKF <- mean(data$Circ_KF)
-
-## gráfica del plano
 # ======== TRONCO 3D (KF -> A -> B) DESDE CIRCUNFERENCIAS PROMEDIO ========
 
 # Paquetes
@@ -616,42 +662,6 @@ p <- plot_ly() %>%
   )
 
 p
-
-# Filtros y generaciòn de parámetros ----
-min(-data$ordinate)
-mean_y
-max(data$normalized_ordinate)
-mean(data$Circ_MP)
-# La idea es quedarse solo con una observación por sujeto en el eje Y
-a <- unique(data[,c("Patient","normalized_ordinate","Circ_MP")])
-b <- unique(data[,c("Patient","normalized_ordinate")])
-
-anti_join(a, b, by = c("Patient", "normalized_ordinate"))
-
-library(dplyr)
-
-full_join(
-  a %>% count(Patient, normalized_ordinate, name = "n_a"),
-  b %>% count(Patient, normalized_ordinate, name = "n_b"),
-  by = c("Patient", "normalized_ordinate")
-) %>%
-  filter(is.na(n_a) | is.na(n_b) | n_a != n_b)
-
-nrow(data)
-data[,c("Patient","normalized_ordinate","Cm_KF","Circ_MP")][data$Patient=="Ilya Talashkevich",]
-
-# Mega importante para poder generar el resto de gráficas:
-circ_by_h <- a %>%
-  group_by(normalized_ordinate, Patient) %>%
-  summarise(circ_patient = mean(Circ_MP), .groups = "drop") %>%
-  group_by(normalized_ordinate) %>%
-  summarise(
-    n_patients = n(),
-    circ_h = ifelse(n_patients > 1,
-                    mean(circ_patient),
-                    circ_patient),
-    .groups = "drop"
-  )
 
 
 # Gráfica con todas las circunferencias superpuestas : ----
@@ -816,7 +826,7 @@ plot_ly() %>%
   )
 
 
-# Validación:  ----
+# Validación 1:  ----
 cbind(
   which_max = c("KF","A","B")[which.max(c(mean_circKF, mean_circA, mean_circB))],
   max_value = max(mean_circKF, mean_circA, mean_circB),
@@ -1080,7 +1090,7 @@ p <- plot_ly() %>%
 p
 
 
-# --- NUEVO:----
+# --- KDE encima :----
 library(dplyr)
 library(plotly)
 library(spatstat)
@@ -1288,3 +1298,8 @@ p <- p %>% layout(
 )
 
 p
+
+
+# Verificación de puntos:----
+max(data$Cm_VM)
+
